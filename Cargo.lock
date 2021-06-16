@@ -17,6 +17,7 @@ name = "blocking_async"
 version = "0.1.0"
 dependencies = [
  "futures",
+ "lazy_static",
  "rand",
  "rayon",
  "tokio",

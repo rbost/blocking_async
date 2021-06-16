@@ -20,7 +20,18 @@ use std::time::Duration;
 
 use rayon::prelude::*;
 
+use lazy_static::*;
+
 use std::ops::FnOnce;
+
+lazy_static! {
+    static ref WAITING_THREADPOOL: rayon::ThreadPool = {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(50)
+            .build()
+            .unwrap()
+    };
+}
 
 pub fn long_blocking_task(index: usize) -> (u64, usize) {
     let duration: u64 = 100 * Uniform::from(1u64..11u64).sample(&mut thread_rng());
@@ -122,7 +133,9 @@ where
             None => {
                 let arc = self.iter.clone();
                 let (sender, receiver) = futures::channel::oneshot::channel::<Option<Self::Item>>();
-                rayon::spawn(move || {
+                // rayon::spawn(move || {
+                // tokio::task::spawn_blocking(move || {
+                WAITING_THREADPOOL.spawn(move || {
                     let thread_index = rayon::current_thread_index().unwrap_or(0xFFFF);
 
                     println!("Attempt locking from thread {}", thread_index);
@@ -159,7 +172,7 @@ async fn basic_par_iter_to_stream() {
 
     // let (_, v) = tokio::join!(producing_fut, receiving_fut);
     // let (_, v) = futures::join!(producing_fut, receiving_fut);
-    let (_, v) = futures::join!(receiving_fut, producing_fut);
+    let (v, _) = futures::join!(receiving_fut, producing_fut);
 
     // let v = receiving_stream.collect::<Vec<u64>>().await;
     // let v = receiver.into_iter().collect::<Vec<u64>>();
