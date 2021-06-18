@@ -24,6 +24,8 @@ use lazy_static::*;
 
 use std::ops::FnOnce;
 
+pub mod hybrid_mpsc;
+
 lazy_static! {
     static ref WAITING_THREADPOOL: rayon::ThreadPool = {
         rayon::ThreadPoolBuilder::new()
@@ -179,6 +181,24 @@ async fn basic_par_iter_to_stream() {
     println!("Task values: {:?}", v);
 }
 
+async fn hybrid_mpsc_par_iter_to_stream() {
+    let (sender, receiver) = hybrid_mpsc::unbounded::<u64>();
+
+    let producing_fut = async_cpu_intensive(|| {
+        (0..50).into_par_iter().for_each_with(sender, |s, i| {
+            s.send(long_blocking_task(i).0).unwrap();
+        })
+    });
+
+    let receiving_fut = receiver.collect::<Vec<u64>>();
+
+    // let (_, v) = tokio::join!(producing_fut, receiving_fut);
+    // let (_, v) = futures::join!(producing_fut, receiving_fut);
+    let (v, _) = futures::join!(receiving_fut, producing_fut);
+
+    println!("Task values: {:?}", v);
+}
+
 // #[tokio::main]
 // async fn main() {
 //     let iter = (0..25).map(|i| long_blocking_task(i));
@@ -197,5 +217,6 @@ async fn basic_par_iter_to_stream() {
 
 #[tokio::main]
 async fn main() {
-    basic_par_iter_to_stream().await;
+    // basic_par_iter_to_stream().await;
+    hybrid_mpsc_par_iter_to_stream().await;
 }
