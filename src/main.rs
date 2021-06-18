@@ -25,6 +25,7 @@ use lazy_static::*;
 use std::ops::FnOnce;
 
 pub mod hybrid_mpsc;
+pub mod simple_latch;
 
 lazy_static! {
     static ref WAITING_THREADPOOL: rayon::ThreadPool = {
@@ -183,15 +184,26 @@ async fn basic_par_iter_to_stream() {
 
 async fn hybrid_mpsc_par_iter_to_stream() {
     let (sender, receiver) = hybrid_mpsc::unbounded::<u64>();
+    let (waiter, notifier) = simple_latch::simple_latch();
 
     let producing_fut = async_cpu_intensive(|| {
-        (0..50).into_par_iter().for_each_with(sender, |s, i| {
-            s.send(long_blocking_task(i).0).unwrap();
-        })
+        (0..50)
+            .into_par_iter()
+            .for_each_with((sender, waiter), |(s, w), i| {
+                w.wait();
+                s.send(long_blocking_task(i).0).unwrap();
+            })
     });
 
-    let receiving_fut = receiver.collect::<Vec<u64>>();
+    // let receiving_fut = receiver.collect::<Vec<u64>>();
+    // let receiving_fut = notifier
+    // .async_drop_latch()
+    // .and_then(|()| receiver.collect::<Vec<u64>>());
 
+    let receiving_fut = async {
+        notifier.drop_latch();
+        receiver.collect::<Vec<u64>>().await
+    };
     // let (_, v) = tokio::join!(producing_fut, receiving_fut);
     // let (_, v) = futures::join!(producing_fut, receiving_fut);
     let (v, _) = futures::join!(receiving_fut, producing_fut);
