@@ -1,11 +1,11 @@
 use futures::channel::oneshot::Receiver;
-use futures::future::join;
+// use futures::future::join;
 use futures::pin_mut;
-use futures::stream;
-use futures::TryStreamExt;
+// use futures::stream;
+// use futures::TryStreamExt;
 use futures::{Future, Stream, StreamExt};
 
-use std::collections::BTreeSet;
+// use std::collections::BTreeSet;
 use std::sync::mpsc::channel;
 
 use rand::distributions::{Distribution, Uniform};
@@ -25,6 +25,7 @@ use lazy_static::*;
 use std::ops::FnOnce;
 
 pub mod hybrid_mpsc;
+pub mod par_iter_stream;
 pub mod simple_latch;
 
 lazy_static! {
