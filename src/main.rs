@@ -212,6 +212,13 @@ async fn hybrid_mpsc_par_iter_to_stream() {
     println!("Task values: {:?}", v);
 }
 
+async fn stream_par_iter() {
+    let stream =
+        par_iter_stream::from_par_iter((0..50).into_par_iter().map(|i| long_blocking_task(i).0));
+
+    let v = stream.collect::<Vec<u64>>().await;
+    println!("Task values: {:?}", v);
+}
 // #[tokio::main]
 // async fn main() {
 //     let iter = (0..25).map(|i| long_blocking_task(i));
@@ -231,5 +238,6 @@ async fn hybrid_mpsc_par_iter_to_stream() {
 #[tokio::main]
 async fn main() {
     // basic_par_iter_to_stream().await;
-    hybrid_mpsc_par_iter_to_stream().await;
+    // hybrid_mpsc_par_iter_to_stream().await;
+    stream_par_iter().await;
 }
