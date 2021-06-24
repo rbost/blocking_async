@@ -28,8 +28,8 @@ pub fn from_par_iter<I: ParallelIterator>(par_iter: I) -> ParIterStream<I> {
 
 impl<I> Stream for ParIterStream<I>
 where
-    I: ParallelIterator + Send + Sync + 'static,
-    I::Item: Clone + Send + Sync + 'static,
+    I: ParallelIterator + 'static,
+    // I : ParallelIterator already imposes I::Item to be Send
 {
     type Item = I::Item;
 

@@ -10,7 +10,9 @@ pub struct ChannelState<T> {
     phantom: std::marker::PhantomData<T>,
 }
 
-#[derive(Clone)]
+unsafe impl<T> Send for ChannelState<T> {}
+unsafe impl<T> Sync for ChannelState<T> {}
+
 pub struct Sender<T> {
     shared_state: Arc<ChannelState<T>>,
     inner_sender: crossbeam_channel::Sender<T>,
@@ -22,6 +24,16 @@ impl<T> Sender<T> {
         self.inner_sender
             .send(msg)
             .map(|()| self.shared_state.waker.wake())
+    }
+}
+
+// We have to manually implement Clone: Sender is Clone even when T is not Clone
+impl<T> Clone for Sender<T> {
+    fn clone(&self) -> Self {
+        Sender {
+            shared_state: self.shared_state.clone(),
+            inner_sender: self.inner_sender.clone(),
+        }
     }
 }
 
