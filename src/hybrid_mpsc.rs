@@ -2,8 +2,11 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use crossbeam_channel::*;
+use futures::stream::FusedStream;
 use futures::task::AtomicWaker;
 use futures::Stream;
+
+use pin_project::pin_project;
 
 pub struct ChannelState<T> {
     waker: AtomicWaker,
@@ -51,6 +54,7 @@ pub fn unbounded<T>() -> (Sender<T>, Receiver<T>) {
     let receiver = Receiver {
         shared_state,
         inner_receiver,
+        finished: false,
     };
 
     (sender, receiver)
@@ -70,15 +74,19 @@ pub fn bounded<T>(cap: usize) -> (Sender<T>, Receiver<T>) {
     let receiver = Receiver {
         shared_state,
         inner_receiver,
+        finished: false,
     };
 
     (sender, receiver)
 }
 
-// #[derive(Debug)]
+#[pin_project]
 pub struct Receiver<T> {
+    #[pin]
     shared_state: Arc<ChannelState<T>>,
+    #[pin]
     inner_receiver: crossbeam_channel::Receiver<T>,
+    finished: bool,
 }
 
 impl<T> Receiver<T> {
@@ -104,6 +112,7 @@ where
             }
             Err(TryRecvError::Disconnected) => {
                 println!("End of stream (fast path)");
+                *self.project().finished = true;
                 return Poll::Ready(None);
             }
             Err(TryRecvError::Empty) => (),
@@ -118,9 +127,19 @@ where
             }
             Err(TryRecvError::Disconnected) => {
                 println!("End of stream");
+                *self.project().finished = true;
                 Poll::Ready(None)
             }
             Err(TryRecvError::Empty) => Poll::Pending,
         }
+    }
+}
+
+impl<T> FusedStream for Receiver<T>
+where
+    T: Send,
+{
+    fn is_terminated(&self) -> bool {
+        self.finished
     }
 }
