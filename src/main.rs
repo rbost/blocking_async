@@ -1,9 +1,4 @@
-use futures::channel::oneshot::Receiver;
-// use futures::future::join;
-use futures::pin_mut;
-// use futures::stream;
-// use futures::TryStreamExt;
-use futures::{Future, Stream, StreamExt};
+use futures::StreamExt;
 
 // use std::collections::BTreeSet;
 use std::sync::mpsc::channel;
@@ -11,10 +6,6 @@ use std::sync::mpsc::channel;
 use rand::distributions::{Distribution, Uniform};
 use rand::thread_rng;
 
-use std::pin::Pin;
-use std::sync::Arc;
-use std::sync::Mutex;
-use std::task::{Context, Poll};
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -25,8 +16,10 @@ use lazy_static::*;
 use std::ops::FnOnce;
 
 pub mod hybrid_mpsc;
+pub mod iter_stream;
 pub mod par_iter_stream;
 pub mod simple_latch;
+pub(crate) mod utils;
 
 lazy_static! {
     static ref WAITING_THREADPOOL: rayon::ThreadPool = {
@@ -71,97 +64,6 @@ where
     receiver.await.unwrap()
 }
 
-pub struct StreamIter<I, V> {
-    iter: Arc<Mutex<I>>,
-    state: Option<Receiver<Option<V>>>,
-    size_hint: (usize, Option<usize>),
-}
-
-impl<I, V> Unpin for StreamIter<I, V> {}
-
-pub(crate) fn assert_stream<T, S>(stream: S) -> S
-where
-    S: Stream<Item = T>,
-{
-    stream
-}
-
-pub fn stream_iter<I, V>(i: I) -> StreamIter<I::IntoIter, V>
-where
-    I: IntoIterator<Item = V>,
-    I::IntoIter: Send + 'static,
-    V: Send + 'static,
-{
-    let iter = i.into_iter();
-    let size_hint = iter.size_hint();
-    println!("Initial size hint {:?}", size_hint);
-
-    assert_stream::<I::Item, _>(StreamIter {
-        iter: Arc::new(Mutex::new(iter)),
-        state: None,
-        size_hint,
-    })
-}
-
-impl<I, V> Stream for StreamIter<I, V>
-where
-    I: Iterator<Item = V> + Send + 'static,
-    V: Send + 'static,
-{
-    type Item = I::Item;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<I::Item>> {
-        match &mut self.state {
-            Some(receiver) => {
-                pin_mut!(receiver);
-                let res = receiver.poll(cx).map(|res| match res {
-                    Err(_) => {
-                        panic!("Unexpected oneshot cancel")
-                    }
-                    Ok(v) => {
-                        self.state = None;
-
-                        if v.is_some() {
-                            // self.size_hint.0 -= 1;
-                            // self.size_hint.1 = self.size_hint.1.map(|s| s - 1);
-
-                            println!("New size hint {:?}", self.size_hint);
-                        } else {
-                            println!("Finished stream");
-                        }
-                        v
-                    }
-                });
-                res
-            }
-            None => {
-                let arc = self.iter.clone();
-                let (sender, receiver) = futures::channel::oneshot::channel::<Option<Self::Item>>();
-                // rayon::spawn(move || {
-                // tokio::task::spawn_blocking(move || {
-                WAITING_THREADPOOL.spawn(move || {
-                    let thread_index = rayon::current_thread_index().unwrap_or(0xFFFF);
-
-                    println!("Attempt locking from thread {}", thread_index);
-
-                    let mut iter = arc.lock().unwrap();
-                    let _ = sender.send(iter.next());
-                    println!("Send item from thread {}", thread_index);
-                });
-                self.state = Some(receiver);
-                self.poll_next(cx)
-            }
-        }
-        // let (sender, receiver) = futures::channel::oneshot::channel::<u64>();
-
-        // Poll::Ready(self.iter.next())
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.size_hint
-    }
-}
-
 async fn basic_par_iter_to_stream() {
     let (sender, receiver) = channel::<u64>();
 
@@ -172,7 +74,7 @@ async fn basic_par_iter_to_stream() {
     });
 
     // producing_fut.await;
-    let receiving_fut = stream_iter(receiver).collect::<Vec<u64>>();
+    let receiving_fut = iter_stream::stream_iter(receiver).collect::<Vec<u64>>();
 
     // let (_, v) = tokio::join!(producing_fut, receiving_fut);
     // let (_, v) = futures::join!(producing_fut, receiving_fut);
@@ -219,6 +121,16 @@ async fn stream_par_iter() {
     let v = stream.collect::<Vec<u64>>().await;
     println!("Task values: {:?}", v);
 }
+
+// async fn mut_stream_par_iter() {
+//     let mut v: Vec<usize> = (0..50).collect();
+//     v.par_iter_mut().for_each(|i| *i += 1);
+//     // let stream = par_iter_stream::from_par_iter(v.par_iter_mut().map(|i| long_blocking_task(*i).0));
+
+//     // let vector = stream.collect::<Vec<u64>>().await;
+//     // println!("Task values: {:?}", vector);
+// }
+
 // #[tokio::main]
 // async fn main() {
 //     let iter = (0..25).map(|i| long_blocking_task(i));
@@ -237,7 +149,7 @@ async fn stream_par_iter() {
 
 #[tokio::main]
 async fn main() {
-    // basic_par_iter_to_stream().await;
+    basic_par_iter_to_stream().await;
     // hybrid_mpsc_par_iter_to_stream().await;
-    stream_par_iter().await;
+    // stream_par_iter().await;
 }
