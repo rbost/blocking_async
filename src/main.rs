@@ -21,6 +21,8 @@ pub mod par_iter_stream;
 pub mod simple_latch;
 pub(crate) mod utils;
 
+use crate::iter_stream::IterStreamExt;
+
 lazy_static! {
     static ref WAITING_THREADPOOL: rayon::ThreadPool = {
         rayon::ThreadPoolBuilder::new()
@@ -74,7 +76,10 @@ async fn basic_par_iter_to_stream() {
     });
 
     // producing_fut.await;
-    let receiving_fut = iter_stream::stream_iter(receiver).collect::<Vec<u64>>();
+    let receiving_fut = receiver
+        // .into_iter()
+        .into_cpu_intensive_stream()
+        .collect::<Vec<u64>>();
 
     // let (_, v) = tokio::join!(producing_fut, receiving_fut);
     // let (_, v) = futures::join!(producing_fut, receiving_fut);
