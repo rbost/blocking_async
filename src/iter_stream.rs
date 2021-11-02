@@ -17,7 +17,6 @@ use crate::hybrid_mpsc;
 use crate::utils;
 
 use futures::stream::iter;
-// use futures::stream::Iter;
 
 enum CPUIntensiveIterStreamState<I, V> {
     Iterator(I),
@@ -72,6 +71,8 @@ where
                         Poll::Pending
                     }
                     Poll::Ready(Err(_)) => {
+                        // We should not panic here, nor should we silently
+                        // discard the error
                         panic!("Unexpected oneshot cancel")
                     }
                     Poll::Ready(Ok((v, iter))) => {

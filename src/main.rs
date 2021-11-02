@@ -1,3 +1,4 @@
+use futures::stream::iter;
 use futures::StreamExt;
 
 // use std::collections::BTreeSet;
@@ -22,6 +23,7 @@ pub mod par_iter_stream;
 pub mod simple_latch;
 pub(crate) mod utils;
 
+use crate::cpu_intensive_stream::*;
 use crate::iter_stream::IterStreamExt;
 
 lazy_static! {
@@ -67,29 +69,29 @@ where
     receiver.await.unwrap()
 }
 
-async fn basic_par_iter_to_stream() {
-    let (sender, receiver) = channel::<u64>();
+// async fn basic_par_iter_to_stream() {
+//     let (sender, receiver) = channel::<u64>();
 
-    let producing_fut = async_cpu_intensive(|| {
-        (0..50).into_par_iter().for_each_with(sender, |s, i| {
-            s.send(long_blocking_task(i).0).unwrap();
-        })
-    });
+//     let producing_fut = async_cpu_intensive(|| {
+//         (0..50).into_par_iter().for_each_with(sender, |s, i| {
+//             s.send(long_blocking_task(i).0).unwrap();
+//         })
+//     });
 
-    // producing_fut.await;
-    let receiving_fut = receiver
-        // .into_iter()
-        .into_cpu_intensive_stream()
-        .collect::<Vec<u64>>();
+//     // producing_fut.await;
+//     let receiving_fut = receiver
+//         // .into_iter()
+//         .into_cpu_intensive_stream()
+//         .collect::<Vec<u64>>();
 
-    // let (_, v) = tokio::join!(producing_fut, receiving_fut);
-    // let (_, v) = futures::join!(producing_fut, receiving_fut);
-    let (v, _) = futures::join!(receiving_fut, producing_fut);
+//     // let (_, v) = tokio::join!(producing_fut, receiving_fut);
+//     // let (_, v) = futures::join!(producing_fut, receiving_fut);
+//     let (v, _) = futures::join!(receiving_fut, producing_fut);
 
-    // let v = receiving_stream.collect::<Vec<u64>>().await;
-    // let v = receiver.into_iter().collect::<Vec<u64>>();
-    println!("Task values: {:?}", v);
-}
+//     // let v = receiving_stream.collect::<Vec<u64>>().await;
+//     // let v = receiver.into_iter().collect::<Vec<u64>>();
+//     println!("Task values: {:?}", v);
+// }
 
 async fn hybrid_mpsc_par_iter_to_stream() {
     let (sender, receiver) = hybrid_mpsc::unbounded::<u64>();
@@ -128,6 +130,20 @@ async fn stream_par_iter() {
     println!("Task values: {:?}", v);
 }
 
+async fn cpu_intensive_iter_to_stream() {
+    let iter = (0..10).map(|i| long_blocking_task(i).0);
+    let stream = iter.into_cpu_intensive_stream();
+    let vector = stream.collect::<Vec<u64>>().await;
+    println!("Task values: {:?}", vector);
+}
+
+async fn cpu_intensive_map() {
+    let stream = iter(0..10)
+        .cpu_intensive_map(long_blocking_task)
+        .filter_map(|res| async move { res.map(|x| x.0).ok() });
+    let vector = stream.collect::<Vec<u64>>().await;
+    println!("Task values: {:?}", vector);
+}
 // async fn mut_stream_par_iter() {
 //     let mut v: Vec<usize> = (0..50).collect();
 //     v.par_iter_mut().for_each(|i| *i += 1);
@@ -155,7 +171,9 @@ async fn stream_par_iter() {
 
 #[tokio::main]
 async fn main() {
-    basic_par_iter_to_stream().await;
+    // cpu_intensive_map().await;
+    cpu_intensive_iter_to_stream().await;
+    // basic_par_iter_to_stream().await;
     // hybrid_mpsc_par_iter_to_stream().await;
     // stream_par_iter().await;
 }

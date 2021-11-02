@@ -4,6 +4,10 @@ use futures::stream::Then;
 use futures::{Future, FutureExt, Stream, StreamExt, TryStream, TryStreamExt};
 use rayon::prelude::*;
 
+pub mod map;
+
+pub use map::*;
+
 pub fn to_cpu_intensive_future<F, I, T>(
     f: F,
 ) -> impl Fn(I) -> futures::channel::oneshot::Receiver<T>
@@ -30,7 +34,17 @@ where
     };
     g
 }
-pub trait CPUIntensiveStreamExt: StreamExt + Sized {
+
+impl<T: ?Sized> CPUIntensiveStreamExt for T where T: StreamExt {}
+
+pub trait CPUIntensiveStreamExt: StreamExt {
+    fn cpu_intensive_map<F, T>(self, f: F) -> CPUIntensiveMap<Self, F, T>
+    where
+        Self: Sized,
+    {
+        CPUIntensiveMap::new(self, f)
+    }
+
     // fn cpu_intensive_map<Fut, F, T, G>(self, f: F) -> Then<Self, Fut, G>
     // where
     //     F: FnMut(Self::Item) -> T,
@@ -76,21 +90,19 @@ pub trait CPUIntensiveStreamExt: StreamExt + Sized {
     //     self.then(g)
     // }
 
-    fn try_cpu_intensive_map<F, T, O, Fut, G>(self, f: F) -> Then<Self, Fut, G>
-    where
-        Self: 'static + Stream,
-        Self::Item: Send,
-        F: 'static + Fn(Self::Item) -> T + Sync + Send,
-        T: 'static + Send,
-        // Fut: futures::channel::oneshot::Receiver<T>,
-        Fut: Future<Output = Result<T, futures::channel::oneshot::Canceled>>,
-        G: Fn(Self::Item) -> Fut,
-    {
-        self.then(to_cpu_intensive_future(f))
-    }
+    // fn try_cpu_intensive_map<F, T, O, Fut, G>(self, f: F) -> Then<Self, Fut, G>
+    // where
+    //     Self: 'static + Stream,
+    //     Self::Item: Send,
+    //     F: 'static + Fn(Self::Item) -> T + Sync + Send,
+    //     T: 'static + Send,
+    //     // Fut: futures::channel::oneshot::Receiver<T>,
+    //     Fut: Future<Output = Result<T, futures::channel::oneshot::Canceled>>,
+    //     G: Fn(Self::Item) -> Fut,
+    // {
+    //     self.then(to_cpu_intensive_future(f))
+    // }
 }
-
-// impl<T: ?Sized> CPUIntensiveStreamExt for T where T: StreamExt {}
 
 pub fn try_cpu_intensive_map<S, F, T>(
     stream: S,
