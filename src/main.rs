@@ -1,9 +1,6 @@
 use futures::stream::iter;
 use futures::StreamExt;
 
-// use std::collections::BTreeSet;
-use std::sync::mpsc::channel;
-
 use rand::distributions::{Distribution, Uniform};
 use rand::thread_rng;
 
@@ -93,6 +90,7 @@ where
 //     println!("Task values: {:?}", v);
 // }
 
+#[allow(dead_code)]
 async fn hybrid_mpsc_par_iter_to_stream() {
     let (sender, receiver) = hybrid_mpsc::unbounded::<u64>();
     let (waiter, notifier) = simple_latch::simple_latch();
@@ -122,6 +120,7 @@ async fn hybrid_mpsc_par_iter_to_stream() {
     println!("Task values: {:?}", v);
 }
 
+#[allow(dead_code)]
 async fn stream_par_iter() {
     let stream =
         par_iter_stream::from_par_iter((0..50).into_par_iter().map(|i| long_blocking_task(i).0));
@@ -133,10 +132,14 @@ async fn stream_par_iter() {
 async fn cpu_intensive_iter_to_stream() {
     let iter = (0..10).map(|i| long_blocking_task(i).0);
     let stream = iter.into_cpu_intensive_stream();
-    let vector = stream.collect::<Vec<u64>>().await;
+    let vector = stream
+        .filter_map(|res| async move { res.ok() })
+        .collect::<Vec<u64>>()
+        .await;
     println!("Task values: {:?}", vector);
 }
 
+#[allow(dead_code)]
 async fn cpu_intensive_map() {
     let stream = iter(0..10)
         .cpu_intensive_map(long_blocking_task)
@@ -171,7 +174,7 @@ async fn cpu_intensive_map() {
 
 #[tokio::main]
 async fn main() {
-    // cpu_intensive_map().await;
+    cpu_intensive_map().await;
     cpu_intensive_iter_to_stream().await;
     // basic_par_iter_to_stream().await;
     // hybrid_mpsc_par_iter_to_stream().await;

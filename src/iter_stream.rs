@@ -40,7 +40,7 @@ where
 {
     let iter = i.into_iter();
 
-    utils::assert_stream::<I::Item, _>(CPUIntensiveIterStream {
+    utils::assert_stream::<Result<I::Item, CanceledComputation>, _>(CPUIntensiveIterStream {
         state: Some(CPUIntensiveIterStreamState::Iterator(iter)),
     })
 }
@@ -50,18 +50,27 @@ where
     I: Iterator + Send + 'static,
     I::Item: Send + 'static,
 {
-    type Item = I::Item;
+    type Item = Result<I::Item, CanceledComputation>;
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<I::Item>> {
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let state = self.state.take();
 
         match state {
-            None => panic!("Invalid StreamIter state"),
-
+            None => {
+                // We are in this state if the previous call of poll_next
+                // failed due to the cancellation of the one_shot channel.
+                // In this case, the previous returned element is Err
+                // (CanceledComputation), so the user of the stream is notified
+                // of the error. We can stop the evaluation of the stream right
+                // away.
+                Poll::Ready(None)
+            }
             Some(CPUIntensiveIterStreamState::Receiver(mut receiver)) => {
                 // Why not using `pin_mut!` here?
-                // We need to reuse `receiver` is case the future is pending, so we cannot move it inside the macro.
-                // SAFETY: It is ok to use `new_unchecked` as receiver cannot get dropped while pinned. Indeed, it stays on the stack.
+                // We need to reuse `receiver` is case the future is pending,
+                // so we cannot move it inside the macro.
+                // SAFETY: It is ok to use `new_unchecked` as receiver cannot
+                // get dropped while pinned. Indeed, it stays on the stack.
                 let pined_receiver = unsafe { Pin::new_unchecked(&mut receiver) };
                 let status = pined_receiver.poll(cx);
 
@@ -73,17 +82,20 @@ where
                     Poll::Ready(Err(_)) => {
                         // We should not panic here, nor should we silently
                         // discard the error
-                        panic!("Unexpected oneshot cancel")
+
+                        // Remember that, at this point, the state is empty and
+                        // the next call to `poll_next` will panic
+                        Poll::Ready(Some(Err(CanceledComputation)))
                     }
                     Poll::Ready(Ok((v, iter))) => {
                         self.state = Some(CPUIntensiveIterStreamState::Iterator(iter));
-                        Poll::Ready(v)
+                        Poll::Ready(v.map(|r| Ok(r)))
                     }
                 }
             }
             Some(CPUIntensiveIterStreamState::Iterator(iter)) => {
                 let (sender, receiver) =
-                    futures::channel::oneshot::channel::<(Option<Self::Item>, I)>();
+                    futures::channel::oneshot::channel::<(Option<I::Item>, I)>();
 
                 let mut iter = iter;
                 rayon::spawn(move || {
@@ -120,3 +132,17 @@ pub trait IterStreamExt: IntoIterator + Sized {
 }
 
 impl<T: core::iter::IntoIterator> IterStreamExt for T {}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+/// Error returned by the computation of an iterator element when the
+/// corresponding task has been canceled (due to some actual task cancellation
+/// or some panic somewhere in the code)
+pub struct CanceledComputation;
+
+impl core::fmt::Display for CanceledComputation {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "oneshot sender canceled")
+    }
+}
+
+impl std::error::Error for CanceledComputation {}

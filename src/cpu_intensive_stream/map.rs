@@ -1,10 +1,7 @@
 use core::fmt;
+use core::pin::Pin;
+use core::task::{Context, Poll};
 use std::sync::Arc;
-use std::{
-    marker::PhantomData,
-    pin::Pin,
-    task::{Context, Poll},
-};
 
 use futures::channel::oneshot::*;
 use futures::Future;
@@ -111,26 +108,4 @@ where
         };
         (lower, upper)
     }
-
-    // fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-    //     let mut this = self.project();
-    //     let res = ready!(this.stream.as_mut().poll_next(cx));
-
-    //     let (sender, receiver) = channel::<T>();
-    //     let f = (this.f).clone();
-    //     rayon::spawn(move || {
-    //         let val = f(res);
-    //         sender
-    //             .send(val)
-    //             .unwrap_or_else(|_| panic!("Receiver dropped"));
-    //     });
-
-    //     this.receiver.replace(receiver);
-
-    //     Poll::Ready(res.map(|x| this.f(x)))
-    // }
-
-    // fn size_hint(&self) -> (usize, Option<usize>) {
-    //     self.stream.size_hint()
-    // }
 }
