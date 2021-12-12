@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use futures::{Stream, StreamExt};
+use futures::StreamExt;
 
 pub mod map;
 
@@ -15,7 +15,8 @@ where
     T: 'static + Send,
 {
     let f_arc = Arc::new(f);
-    let g = move |input| {
+
+    move |input| {
         let (sender, receiver) = futures::channel::oneshot::channel::<T>();
         let f_arc = f_arc.clone();
         rayon::spawn(move || {
@@ -26,8 +27,7 @@ where
         });
 
         receiver
-    };
-    g
+    }
 }
 
 impl<T: ?Sized> CPUIntensiveStreamExt for T where T: StreamExt {}
@@ -39,16 +39,4 @@ pub trait CPUIntensiveStreamExt: StreamExt {
     {
         CPUIntensiveMap::new(self, f)
     }
-}
-
-pub fn cpu_intensive_map<S, F, T>(stream: S, f: F) -> impl Stream<Item = T>
-where
-    S: 'static + Stream,
-    S::Item: Send,
-    F: 'static + Fn(S::Item) -> T + Sync + Send,
-    T: 'static + Send,
-{
-    stream
-        .cpu_intensive_map(f)
-        .filter_map(|res| async move { res.ok() })
 }

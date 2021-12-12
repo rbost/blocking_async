@@ -13,6 +13,9 @@ pub struct ChannelState<T> {
     phantom: std::marker::PhantomData<T>,
 }
 
+// SAFETY: ChannelState is Send + Sync in every case as it does not contain a
+// T object, just a PhantomData that prevents auto implementation of these
+// traits
 unsafe impl<T> Send for ChannelState<T> {}
 unsafe impl<T> Sync for ChannelState<T> {}
 
@@ -23,7 +26,6 @@ pub struct Sender<T> {
 
 impl<T> Sender<T> {
     pub fn send(&self, msg: T) -> Result<(), SendError<T>> {
-        println!("Send value");
         self.inner_sender
             .send(msg)
             .map(|()| self.shared_state.waker.wake())
@@ -102,16 +104,12 @@ where
     type Item = T;
 
     fn poll_next(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        println!("Poll...");
-
         // fast path to avoid registering a waker if not needed
         match self.inner_receiver.try_recv() {
             Ok(v) => {
-                println!("Found value (fast path)");
                 return Poll::Ready(Some(v));
             }
             Err(TryRecvError::Disconnected) => {
-                println!("End of stream (fast path)");
                 *self.project().finished = true;
                 return Poll::Ready(None);
             }
@@ -121,12 +119,8 @@ where
         self.shared_state.waker.register(cx.waker());
 
         match self.inner_receiver.try_recv() {
-            Ok(v) => {
-                println!("Found value");
-                Poll::Ready(Some(v))
-            }
+            Ok(v) => Poll::Ready(Some(v)),
             Err(TryRecvError::Disconnected) => {
-                println!("End of stream");
                 *self.project().finished = true;
                 Poll::Ready(None)
             }

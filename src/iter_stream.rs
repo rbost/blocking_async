@@ -89,7 +89,7 @@ where
                     }
                     Poll::Ready(Ok((v, iter))) => {
                         self.state = Some(CPUIntensiveIterStreamState::Iterator(iter));
-                        Poll::Ready(v.map(|r| Ok(r)))
+                        Poll::Ready(v.map(Ok))
                     }
                 }
             }
