@@ -122,8 +122,9 @@ async fn hybrid_mpsc_par_iter_to_stream() {
 
 #[allow(dead_code)]
 async fn stream_par_iter() {
-    let stream =
-        par_iter_stream::from_par_iter((0..50).into_par_iter().map(|i| long_blocking_task(i).0));
+    let stream = par_iter_stream::to_par_iter_stream(
+        (0..50).into_par_iter().map(|i| long_blocking_task(i).0),
+    );
 
     let v = stream.collect::<Vec<u64>>().await;
     println!("Task values: {:?}", v);
@@ -172,11 +173,21 @@ async fn cpu_intensive_map() {
 //     // println!("Task value: {}", value);
 // }
 
-#[tokio::main]
-async fn main() {
-    cpu_intensive_map().await;
-    cpu_intensive_iter_to_stream().await;
-    // basic_par_iter_to_stream().await;
-    // hybrid_mpsc_par_iter_to_stream().await;
-    // stream_par_iter().await;
+// #[tokio::main]
+// async fn main() {
+//     cpu_intensive_map().await;
+//     cpu_intensive_iter_to_stream().await;
+//     // basic_par_iter_to_stream().await;
+//     // hybrid_mpsc_par_iter_to_stream().await;
+//     // stream_par_iter().await;
+// }
+
+fn main() {
+    println!("Rayon start");
+    {
+        rayon::iter::repeat(())
+            .take(30)
+            .for_each(|_| println!("Toto"));
+    }
+    println!("Rayon stop");
 }
